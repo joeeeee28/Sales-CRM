@@ -163,7 +163,12 @@ export async function decryptFile(inputFile: string, outputFile: string, passphr
 }
 
 // CLI runner
-if (process.argv[1] && process.argv[1].endsWith('crypto-backup.ts')) {
+async function main() {
+  const scriptName = 'crypto-backup.ts';
+  if (!process.argv[1] || !process.argv[1].endsWith(scriptName)) {
+    return;
+  }
+
   const mode = process.argv[2]; // 'encrypt' | 'decrypt'
   const inPath = process.argv[3];
   const outPath = process.argv[4];
@@ -197,3 +202,9 @@ if (process.argv[1] && process.argv[1].endsWith('crypto-backup.ts')) {
     process.exit(1);
   }
 }
+
+main().catch((err) => {
+  console.error('[crypto fatal]', err);
+  process.exit(1);
+});
+
