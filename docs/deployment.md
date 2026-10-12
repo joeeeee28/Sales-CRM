@@ -211,16 +211,80 @@ HSTS in prod) are applied by the app; Render terminates TLS.
 
 ## 6. Backups, rollback, operations
 
-**Backups (Supabase free has no PITR):**
-```bash
-# manual backup (any machine with the connection string)
-pg_dump 'postgres://postgres.<ref>:<password>@db.<ref>.supabase.co:5432/postgres' -Fc -f ojas-$(date +%F).dump
-# restore into an EMPTY database
-pg_restore --clean --if-exists -d 'postgres://...' ojas-2026-10-13.dump
-```
-Schedule a weekly `pg_dump` (cron-job.org can't run it — use a GitHub Action on a schedule with the
-URL as a repository secret). Keep `data/app.sqlite` from before any data migration as an extra
-snapshot.
+### Automated GitHub Actions Backups
+Because Supabase free has no Point-In-Time-Recovery (PITR) or automated backups:
+- Workflow: `.github/workflows/database-backup.yml`
+- Schedule: Runs weekly on Sunday at 02:00 UTC, or on-demand via `workflow_dispatch`.
+- Tooling: PostgreSQL 16 client (`pg_dump` 16+) from the official PGDG apt repository to ensure full protocol and catalog compatibility with Supabase PostgreSQL 15/16.
+- Format: PostgreSQL Custom format (`pg_dump -Fc --compress=9 --no-owner --no-privileges`).
+- Encryption: Client-side **Authenticated Encryption with Associated Data (AEAD)** via **AES-256-GCM** using PBKDF2-HMAC-SHA256 (250,000 iterations) with a unique 16-byte random salt and 12-byte nonce (`scripts/crypto-backup.ts`).
+- Cryptographic Integrity: Includes a 16-byte GCM authentication tag. **Any corrupt or tampered backup is cryptographically rejected before restoration commences.**
+- Retention: 30 days default GitHub artifact retention (customizable up to 90 days on dispatch).
+  *Note:* GitHub artifacts are transient retention windows, not permanent compliance archives. For long-term storage, download verified artifacts or mirror them to private object storage (S3/GCS/R2).
+
+#### Required GitHub Secrets (Repository Settings → Secrets and variables → Actions):
+1. `DATABASE_URL`: Production Supabase connection string (`postgres://postgres.<ref>:<password>@...:5432/postgres`).
+2. `BACKUP_ENCRYPTION_KEY`: Dedicated secret passphrase (min 16 chars; generate with `openssl rand -hex 32`). Never commit this key.
+3. `STAGING_DATABASE_URL` *(Optional)*: Non-production database URL for the automated test restoration workflow (`.github/workflows/validate-restore.yml`).
+
+### Step-by-Step Restoration Procedure
+
+> [!CAUTION]
+> Never restore directly into production without prior verification in a staging/test environment. Do not run automated drops against your production database.
+
+1. **Download and unpack the artifact:**
+   In GitHub Actions → click the backup run → download the `supabase_backup_<TIMESTAMP>` zip containing `supabase_backup_<TIMESTAMP>.dump.enc` and its metadata file.
+
+2. **Verify SHA256 checksum:**
+   ```bash
+   sha256sum supabase_backup_<TIMESTAMP>.dump.enc
+   # Compare against the hash printed in supabase_backup_<TIMESTAMP>.meta.txt
+   ```
+
+3. **Decrypt the backup securely into an uncommitted local directory:**
+   ```bash
+   # Provide your BACKUP_ENCRYPTION_KEY safely without leaking into bash history:
+   read -s -p "Enter BACKUP_ENCRYPTION_KEY: " BACKUP_ENCRYPTION_KEY && export BACKUP_ENCRYPTION_KEY && echo
+   npx tsx scripts/crypto-backup.ts decrypt supabase_backup_<TIMESTAMP>.dump.enc restore_target.dump
+   unset BACKUP_ENCRYPTION_KEY
+   ```
+   *Note:* If the file has been tampered with or corrupted, the AEAD authentication tag check will fail and delete `restore_target.dump` immediately.
+
+4. **Inspect the archive contents (Table of Contents):**
+   ```bash
+   pg_restore --list restore_target.dump | head -n 30
+   ```
+
+5. **Restore into a fresh staging / test database first:**
+   ```bash
+   # Target MUST be a scratch/staging database, never production:
+   export PGDATABASE='postgres://postgres:<password>@staging-db-host:5432/postgres'
+   pg_restore --clean --if-exists --no-owner --no-privileges restore_target.dump
+   unset PGDATABASE
+   ```
+
+6. **Validate restored schema & row counts:**
+   Run the verification query on the restored database:
+   ```bash
+   psql -c "
+     SELECT 'products' as tbl, count(*) FROM products
+     UNION ALL SELECT 'categories', count(*) FROM categories
+     UNION ALL SELECT 'users', count(*) FROM users
+     UNION ALL SELECT 'orders', count(*) FROM orders
+     UNION ALL SELECT 'supplier_items', count(*) FROM supplier_items;
+   "
+   ```
+   Ensure critical tables (`products`, `orders`, `users`, `categories`, `supplier_items`) contain expected records.
+
+7. **Clean up decrypted files:**
+   ```bash
+   shred -u restore_target.dump 2>/dev/null || rm -f restore_target.dump
+   ```
+
+8. **Disaster Recovery (Promoting restore if production database is lost):**
+   - If the latest backup is corrupt or failed integrity verification: fall back to the preceding week's backup artifact.
+   - If Supabase project was deleted/unrecoverable: create a new Supabase project, run migrations via `npm run db:migrate`, and restore data with `pg_restore --no-owner --no-privileges -d "$NEW_DATABASE_URL" restore_target.dump`.
+   - Update `DATABASE_URL` in Render Environment Variables and restart the service.
 
 **App rollback:** Render → your service → **Deploys** → ⋯ → *Roll back deploy* (previous image is
 retained). Or revert the merge commit on `main` — auto-deploy ships the revert. Database schema

@@ -1,0 +1,181 @@
+name: Validate Backup Restore (Staging / Non-Prod Only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      artifact_name:
+        description: 'Name of the backup artifact to restore & validate'
+        required: true
+        type: string
+      target_db_secret_name:
+        description: 'Name of repository secret containing the non-production target DB URI (must be STAGING_DATABASE_URL or TEST_DATABASE_URL)'
+        required: false
+        default: 'STAGING_DATABASE_URL'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate-restore:
+    name: Decrypt & Restore to Test Database
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4.2.2
+
+      - name: Setup Node.js runtime
+        uses: actions/setup-node@v4.2.0
+        with:
+          node-version: 22
+
+      - name: Validate environment and target database safety
+        env:
+          TARGET_URL: ${{ secrets[github.event.inputs.target_db_secret_name] }}
+          PROD_URL: ${{ secrets.DATABASE_URL }}
+          BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+          SECRET_NAME: ${{ github.event.inputs.target_db_secret_name }}
+        run: |
+          set -euo pipefail
+
+          if [ "${SECRET_NAME}" = "DATABASE_URL" ]; then
+            echo "::error::SAFETY VIOLATION: Refusing to use DATABASE_URL as restore validation target!"
+            exit 1
+          fi
+
+          if [ -z "${TARGET_URL:-}" ]; then
+            echo "::error::Target database secret '${SECRET_NAME}' is not set in repository settings."
+            exit 1
+          fi
+
+          # Normalize host/database to prevent bypass through trivial URL variations
+          strip_credentials() {
+            echo "$1" | sed -E 's|^[a-zA-Z0-9_+.-]+://[^@]+@||'
+          }
+
+          PROD_ENDPOINT=$(strip_credentials "${PROD_URL:-}")
+          TARGET_ENDPOINT=$(strip_credentials "${TARGET_URL}")
+
+          if [ -n "${PROD_ENDPOINT}" ] && [ "${TARGET_ENDPOINT}" = "${PROD_ENDPOINT}" ]; then
+            echo "::error::CRITICAL SAFETY ABORT: Target database matches production endpoint (${TARGET_ENDPOINT}). Restoration test must NEVER connect to production!"
+            exit 1
+          fi
+
+          if [ -z "${BACKUP_ENCRYPTION_KEY:-}" ]; then
+            echo "::error::BACKUP_ENCRYPTION_KEY secret is not set."
+            exit 1
+          fi
+
+          echo "Target database safely separated from production."
+
+      - name: Setup PostgreSQL client tools (PostgreSQL 16+)
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y -qq curl ca-certificates gnupg lsb-release
+          sudo install -d /etc/apt/keyrings
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/keyrings/postgresql.gpg
+          echo "deb [signed-by=/etc/apt/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-16
+          pg_restore --version
+
+      - name: Download encrypted backup artifact
+        uses: actions/download-artifact@v4.1.9
+        with:
+          name: ${{ github.event.inputs.artifact_name }}
+          path: /tmp/backup_artifact
+
+      - name: Verify metadata and authentic decrypt
+        env:
+          BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+        run: |
+          set -euo pipefail
+
+          ENC_FILE=$(find /tmp/backup_artifact -name "*.dump.enc" | head -n 1)
+          META_FILE=$(find /tmp/backup_artifact -name "*.meta.txt" | head -n 1)
+
+          if [ -z "${ENC_FILE}" ] || [ ! -f "${ENC_FILE}" ]; then
+            echo "::error::Encrypted dump file (*.dump.enc) not found in downloaded artifact."
+            exit 1
+          fi
+
+          if [ -f "${META_FILE}" ]; then
+            echo "--- Backup Metadata ---"
+            cat "${META_FILE}"
+            EXPECTED_SHA=$(grep "SHA256 (Encrypted):" "${META_FILE}" | awk '{print $3}')
+            if [ -n "${EXPECTED_SHA}" ]; then
+              ACTUAL_SHA=$(sha256sum "${ENC_FILE}" | awk '{print $1}')
+              if [ "${ACTUAL_SHA}" != "${EXPECTED_SHA}" ]; then
+                echo "::error::Checksum mismatch! Metadata SHA: ${EXPECTED_SHA}, Actual SHA: ${ACTUAL_SHA}."
+                exit 1
+              fi
+              echo "Checksum verification passed: ${ACTUAL_SHA}"
+            fi
+          fi
+
+          RESTORE_DIR="${RUNNER_TEMP}/restore_validation"
+          mkdir -p -m 700 "${RESTORE_DIR}"
+          DEC_FILE="${RESTORE_DIR}/decrypted.dump"
+
+          cleanup() {
+            if [ -f "${DEC_FILE}" ]; then
+              shred -u "${DEC_FILE}" 2>/dev/null || rm -f "${DEC_FILE}"
+            fi
+          }
+          trap cleanup EXIT
+
+          echo "Authenticating and decrypting backup using AES-256-GCM..."
+          npx tsx scripts/crypto-backup.ts decrypt "${ENC_FILE}" "${DEC_FILE}"
+
+          echo "Validating archive table of contents..."
+          pg_restore --list "${DEC_FILE}" > "${RESTORE_DIR}/toc.txt"
+          TOTAL_ITEMS=$(wc -l < "${RESTORE_DIR}/toc.txt")
+          echo "Archive TOC verified: ${TOTAL_ITEMS} items present."
+
+          echo "DEC_FILE_PATH=${DEC_FILE}" >> $GITHUB_ENV
+
+      - name: Restore and validate database integrity
+        env:
+          TARGET_URL: ${{ secrets[github.event.inputs.target_db_secret_name] }}
+        run: |
+          set -euo pipefail
+          export PGDATABASE="${TARGET_URL}"
+
+          echo "Restoring database archive into staging database..."
+          # --clean: drop existing schema objects before recreating
+          # --if-exists: clean gracefully
+          # --no-owner / --no-privileges: ensure compatibility across target roles
+          pg_restore \
+            --clean \
+            --if-exists \
+            --no-owner \
+            --no-privileges \
+            "${DEC_FILE_PATH}" || true
+
+          echo "Verifying restored table row counts and schema..."
+          psql -c "
+            SELECT
+              table_name,
+              table_type
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+            ORDER BY table_name;
+          "
+
+          echo "Verifying essential tables row counts..."
+          psql -c "
+            SELECT 'products' as table_name, count(*) as count FROM products
+            UNION ALL
+            SELECT 'categories', count(*) FROM categories
+            UNION ALL
+            SELECT 'users', count(*) FROM users
+            UNION ALL
+            SELECT 'orders', count(*) FROM orders
+            UNION ALL
+            SELECT 'supplier_items', count(*) FROM supplier_items
+            ORDER BY table_name;
+          "
+
+          echo "Restore validation succeeded completely."

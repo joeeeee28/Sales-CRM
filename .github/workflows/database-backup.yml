@@ -1,0 +1,142 @@
+name: Database Backup (PostgreSQL)
+
+on:
+  schedule:
+    # Run every Sunday at 02:00 UTC
+    - cron: '0 2 * * 0'
+  workflow_dispatch:
+    inputs:
+      retention_days:
+        description: 'Artifact retention period in days (1-90)'
+        required: false
+        default: '30'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-database-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    name: Backup & Encrypt Database
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4.2.2
+
+      - name: Setup Node.js runtime
+        uses: actions/setup-node@v4.2.0
+        with:
+          node-version: 22
+
+      - name: Setup PostgreSQL client tools (PostgreSQL 16+)
+        run: |
+          set -euo pipefail
+          # Configure official PostgreSQL APT repository for latest pg_dump compatible with Supabase
+          sudo apt-get install -y -qq curl ca-certificates gnupg lsb-release
+          sudo install -d /etc/apt/keyrings
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/keyrings/postgresql.gpg
+          echo "deb [signed-by=/etc/apt/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-16
+          pg_dump --version
+
+      - name: Validate secrets
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::DATABASE_URL secret is not set in GitHub repository settings."
+            exit 1
+          fi
+          if [ -z "${BACKUP_ENCRYPTION_KEY:-}" ]; then
+            echo "::error::BACKUP_ENCRYPTION_KEY secret is not set in GitHub repository settings."
+            exit 1
+          fi
+          if [ "${#BACKUP_ENCRYPTION_KEY}" -lt 16 ]; then
+            echo "::error::BACKUP_ENCRYPTION_KEY must be at least 16 characters long."
+            exit 1
+          fi
+          echo "Secrets validation passed."
+
+      - name: Execute pg_dump, authenticate, and encrypt
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+        run: |
+          set -euo pipefail
+
+          BACKUP_DIR="${RUNNER_TEMP}/db_backup"
+          mkdir -p -m 700 "${BACKUP_DIR}"
+
+          TIMESTAMP=$(date -u +"%Y%m%d_%H%M%SZ")
+          RAW_FILE="${BACKUP_DIR}/supabase_backup_${TIMESTAMP}.dump"
+          ENC_FILE="${BACKUP_DIR}/supabase_backup_${TIMESTAMP}.dump.enc"
+          METADATA_FILE="${BACKUP_DIR}/supabase_backup_${TIMESTAMP}.meta.txt"
+
+          # Guarantee that unencrypted dump is purged even if subsequent steps fail
+          cleanup() {
+            if [ -f "${RAW_FILE}" ]; then
+              shred -u "${RAW_FILE}" 2>/dev/null || rm -f "${RAW_FILE}"
+            fi
+          }
+          trap cleanup EXIT
+
+          echo "Running pg_dump (custom compressed format) at UTC ${TIMESTAMP}..."
+          # Pass connection URI via PGCONNECT_URL / libpq environment without command-line arg exposure
+          export PGDATABASE="${DATABASE_URL}"
+          pg_dump \
+            --format=custom \
+            --compress=9 \
+            --no-owner \
+            --no-privileges \
+            --file="${RAW_FILE}"
+
+          RAW_SIZE=$(stat -c%s "${RAW_FILE}" 2>/dev/null || stat -f%z "${RAW_FILE}")
+          echo "pg_dump completed successfully. Uncompressed dump size: ${RAW_SIZE} bytes."
+
+          if [ "${RAW_SIZE}" -le 0 ]; then
+            echo "::error::pg_dump produced an empty file."
+            exit 1
+          fi
+
+          echo "Validating table-of-contents via pg_restore --list before encryption..."
+          pg_restore --list "${RAW_FILE}" > /dev/null
+          echo "Archive table-of-contents validated."
+
+          echo "Performing Authenticated Encryption (AES-256-GCM + PBKDF2 250k iter)..."
+          npx tsx scripts/crypto-backup.ts encrypt "${RAW_FILE}" "${ENC_FILE}"
+
+          ENC_SIZE=$(stat -c%s "${ENC_FILE}" 2>/dev/null || stat -f%z "${ENC_FILE}")
+          ENC_SHA256=$(sha256sum "${ENC_FILE}" | awk '{print $1}')
+          echo "Encryption complete. Encrypted size: ${ENC_SIZE} bytes."
+
+          cat <<EOF > "${METADATA_FILE}"
+          Timestamp (UTC): ${TIMESTAMP}
+          Format: PostgreSQL Custom (-Fc)
+          Cipher: AES-256-GCM (Authenticated Encryption)
+          KDF: PBKDF2-HMAC-SHA256 (250,000 iterations)
+          SHA256 (Encrypted): ${ENC_SHA256}
+          Encrypted Size Bytes: ${ENC_SIZE}
+          EOF
+
+          echo "ARTIFACT_PATH=${ENC_FILE}" >> $GITHUB_ENV
+          echo "META_PATH=${METADATA_FILE}" >> $GITHUB_ENV
+          echo "BACKUP_NAME=supabase_backup_${TIMESTAMP}" >> $GITHUB_ENV
+
+      - name: Upload encrypted backup artifact
+        uses: actions/upload-artifact@v4.6.1
+        with:
+          name: ${{ env.BACKUP_NAME }}
+          path: |
+            ${{ env.ARTIFACT_PATH }}
+            ${{ env.META_PATH }}
+          retention-days: ${{ github.event.inputs.retention_days || 30 }}
+          if-no-files-found: error

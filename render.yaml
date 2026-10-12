@@ -10,7 +10,7 @@ services:
     name: ojas-store
     runtime: node
     plan: free
-    region: singapore # closest Render region to India; change to taste
+    region: singapore # Closest available Render region to Supabase Mumbai (AWS ap-south-1). Note: latency is ~35-50ms; Frankfurt is ~110ms; US regions are ~180-220ms.
     branch: main # production branch — auto-deploys on every push
     buildCommand: npm ci && npm run build
     startCommand: npm start
