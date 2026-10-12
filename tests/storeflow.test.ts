@@ -316,6 +316,29 @@ describe('supplier integration: stock sync, fulfillment, failures', () => {
   });
 });
 
+describe('home rails are catalogue-driven and carry images', () => {
+  it('serves featured/offers/new-arrivals/popular from real queries', async () => {
+    const res = await client.fetch('/api/home');
+    expect(res.status).toBe(200);
+    expect(res.data.featured.length).toBeGreaterThan(0);
+    expect(res.data.newArrivals.length).toBeGreaterThan(0);
+    expect(Array.isArray(res.data.popular)).toBe(true); // empty until real orders exist — honest
+    for (const rail of ['featured', 'offers', 'newArrivals', 'popular']) {
+      for (const item of res.data[rail]) {
+        expect(Array.isArray(item.images)).toBe(true);
+        expect(item.images.length).toBeGreaterThan(0); // seeded products all have photography
+        expect(typeof item.min_price_paise).toBe('number');
+        expect(typeof item.total_stock).toBe('number');
+      }
+    }
+    // offers must be genuine compare-at reductions
+    expect(res.data.offers.length).toBeGreaterThan(0);
+    for (const o of res.data.offers) {
+      expect(o.compare_at_price_paise).toBeGreaterThan(o.min_price_paise);
+    }
+  });
+});
+
 describe('content, policies & SEO', () => {
   it('serves every policy page and the contact form works', async () => {
     for (const slug of ['shipping-policy', 'returns-refund-policy', 'privacy-policy', 'terms-and-conditions', 'cancellation-policy', 'about']) {

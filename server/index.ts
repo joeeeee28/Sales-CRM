@@ -7,9 +7,13 @@ import { seedIfEmpty } from '../scripts/seed.js';
 
 async function main() {
   const db = await initDb();
-  const applied = await migrate(db);
-  if (applied.length) console.log(`[db] applied migrations: ${applied.join(', ')}`);
-  await seedIfEmpty();
+  if (config.dbMigrateOnBoot) {
+    const applied = await migrate(db);
+    if (applied.length) console.log(`[db] applied migrations: ${applied.join(', ')}`);
+    await seedIfEmpty();
+  } else {
+    console.log('[db] DB_MIGRATE_ON_BOOT=false — skipping migrations/seed (run `npm run db:migrate` with a DDL-capable role)');
+  }
 
   const app = createApp();
   const server = app.listen(config.port, '0.0.0.0', () => {

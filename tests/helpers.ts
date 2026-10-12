@@ -32,23 +32,8 @@ export interface TestClient {
   origin: string;
 }
 
-export async function boot(): Promise<{ client: TestClient; close: () => Promise<void> }> {
-  const { initDb } = await import('../server/db/index.js');
-  const { migrate } = await import('../server/db/migrate.js');
-  const { seed } = await import('../scripts/seed.js');
-  const { createApp } = await import('../server/app.js');
-
-  const db = await initDb();
-  await migrate(db);
-  await seed();
-  const app = createApp();
-  const server = await new Promise<any>((resolve) => {
-    const s = app.listen(0, '127.0.0.1', () => resolve(s));
-  });
-  const port = server.address().port;
-  const origin = `http://127.0.0.1:${port}`;
-
-  const client: TestClient = {
+export function makeClient(origin: string): TestClient {
+  return {
     origin,
     fetch: async (p, init = {}) => {
       const headers: Record<string, string> = { ...(init.headers ?? {}) };
@@ -71,6 +56,24 @@ export async function boot(): Promise<{ client: TestClient; close: () => Promise
       return { status: res.status, data, headers: res.headers };
     },
   };
+}
+
+export async function boot(): Promise<{ client: TestClient; close: () => Promise<void> }> {
+  const { initDb } = await import('../server/db/index.js');
+  const { migrate } = await import('../server/db/migrate.js');
+  const { seed } = await import('../scripts/seed.js');
+  const { createApp } = await import('../server/app.js');
+
+  const db = await initDb();
+  await migrate(db);
+  await seed();
+  const app = createApp();
+  const server = await new Promise<any>((resolve) => {
+    const s = app.listen(0, '127.0.0.1', () => resolve(s));
+  });
+  const port = server.address().port;
+  const origin = `http://127.0.0.1:${port}`;
+  const client = makeClient(origin);
 
   return { client, close: async () => { server.close(); await db.close(); fs.rmSync(tmpDir, { recursive: true, force: true }); } };
 }

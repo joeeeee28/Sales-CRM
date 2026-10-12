@@ -164,9 +164,12 @@ export async function listProducts(f: ListFilters): Promise<{ items: ProductList
 
   const rows = await db().query(sql, params);
 
+  // NOTE: keep joins in sync with the main query — `where` may reference c/price_agg/stock/r/s.
   const countSql = `
     SELECT COUNT(*) AS n FROM products p
     LEFT JOIN categories c ON c.id = p.category_id
+    LEFT JOIN (SELECT product_id, AVG(rating*1.0) rating_avg, COUNT(*) rating_count FROM reviews WHERE status='published' GROUP BY product_id) r ON r.product_id = p.id
+    LEFT JOIN (SELECT oi.product_id, SUM(oi.qty) units_sold FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE o.status NOT IN ('cancelled','refunded') GROUP BY oi.product_id) s ON s.product_id = p.id
     LEFT JOIN (SELECT product_id, MIN(COALESCE(price_paise, (SELECT base_price_paise FROM products pp WHERE pp.id = product_variants.product_id))) AS min_price
                FROM product_variants WHERE is_active = 1 GROUP BY product_id) price_agg ON price_agg.product_id = p.id
     LEFT JOIN (SELECT product_id, SUM(stock_qty) total_stock FROM product_variants WHERE is_active = 1 GROUP BY product_id) stock ON stock.product_id = p.id

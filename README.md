@@ -131,6 +131,21 @@ tests/          vitest integration suite (own temp DB)
 public/media/   product imagery
 ```
 
+## Deployment (free tier: Render + Supabase)
+
+Single-service production architecture: one Render free web service runs the Express server, which
+serves both the built SPA and the same-origin `/api` — no CORS, no second host. The database is
+Supabase free Postgres (the existing `pg` adapter, with RLS policies as defence-in-depth).
+Full step-by-step guide, env checklist, data-migration tool (`npm run db:copy-to-pg`), backups,
+rollback and honest free-tier limitations: **[docs/deployment.md](docs/deployment.md)**.
+
+```bash
+DATABASE_URL='postgres://…' npm run db:migrate      # schema on Supabase
+DATABASE_URL='postgres://…' npm run db:copy-to-pg   # optional: copy local SQLite data
+npm run verify:deploy -- https://<service>.onrender.com   # post-deploy smoke checks
+TEST_DATABASE_URL='postgres://…' npx vitest run tests/postgres.test.ts  # real-server tests (scratch DB)
+```
+
 ## Production checklist
 
 1. Set `SESSION_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `PUBLIC_URL`.

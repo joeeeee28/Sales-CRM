@@ -201,7 +201,10 @@ class PgDb implements Db {
     const client = requestClient.getStore();
     const target = client ?? (await this.pool.connect());
     try {
-      await target.query('SELECT set_config($1, $2, false), set_config($3, $4, false)', [
+      // is_local=true keeps the identity transaction-scoped: safe with poolers
+      // (Supabase PgBouncer in transaction mode) and cannot leak between requests.
+      // Always called inside withRequestIdentity's transaction.
+      await target.query('SELECT set_config($1, $2, true), set_config($3, $4, true)', [
         'app.user_id',
         userId ?? '',
         'app.role',
@@ -224,10 +227,29 @@ let instance: Db | null = null;
 export async function createDb(): Promise<Db> {
   if (config.databaseUrl) {
     const { default: pg } = await import('pg');
+    // Postgres returns int8/numeric (COUNT, SUM, AVG) as strings; SQLite returns
+    // numbers. Parse them centrally so row shapes are identical per dialect.
+    // (Values here are paise amounts/counts — far below Number.MAX_SAFE_INTEGER.)
+    pg.types.setTypeParser(20, (v) => (v === null ? null : parseInt(v, 10))); // bigint
+    pg.types.setTypeParser(1700, (v) => (v === null ? null : parseFloat(v))); // numeric
+    const sslMode = config.databaseSslMode; // 'auto' | 'disable' | 'require'
+    const isLocal = /@(localhost|127\.0\.0\.1)/.test(config.databaseUrl);
+    const ssl =
+      sslMode === 'disable' || (sslMode === 'auto' && isLocal)
+        ? undefined
+        : { rejectUnauthorized: false }; // Supabase presents a valid cert chain; require encryption without pinning the CA
     const pool = new pg.Pool({
       connectionString: config.databaseUrl,
-      max: 10,
-      ssl: config.databaseUrl.includes('localhost') ? undefined : { rejectUnauthorized: false },
+      max: config.pgPoolMax,
+      ssl,
+      connectionTimeoutMillis: 10_000,
+      idleTimeoutMillis: 60_000,
+      allowExitOnIdle: false,
+    });
+    pool.on('error', (err) => {
+      // Transient idle-client failures (e.g. Supabase restart) must not crash the
+      // process — the pool replaces the client and the next query reconnects.
+      console.error('[db] idle pg client error (will reconnect):', err.message);
     });
     return new PgDb(pool);
   }

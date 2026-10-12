@@ -32,6 +32,16 @@ export const config = {
   port: int('PORT', 4000),
   publicUrl: str('PUBLIC_URL', `http://localhost:${int('PORT', 4000)}`).replace(/\/$/, ''),
   databaseUrl: str('DATABASE_URL'),
+  /** 'auto' (SSL unless localhost) | 'require' | 'disable' */
+  databaseSslMode: str('DATABASE_SSL_MODE', 'auto') as 'auto' | 'require' | 'disable',
+  pgPoolMax: int('PG_POOL_MAX', 5),
+  /** Run migrations+seed at boot. Disable when the app connects with a non-DDL role. */
+  dbMigrateOnBoot: bool('DB_MIGRATE_ON_BOOT', true),
+  /** Comma-separated list of allowed cross-origin frontends (empty = same-origin only, no CORS headers). */
+  corsOrigins: str('CORS_ORIGINS')
+    .split(',')
+    .map((s) => s.trim().replace(/\/$/, ''))
+    .filter(Boolean),
   sqlitePath: str('SQLITE_PATH', './data/app.sqlite'),
   sessionSecret: sessionSecret || 'dev-only-insecure-session-secret',
   sessionTtlHours: int('SESSION_TTL_HOURS', 720),

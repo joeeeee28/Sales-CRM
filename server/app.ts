@@ -5,7 +5,7 @@ import path from 'node:path';
 import { config, paths } from './config.js';
 import { errorHandler, asyncHandler } from './lib/errors.js';
 import { loadSessionUser } from './lib/auth.js';
-import { withRequestIdentity } from './db/index.js';
+import { db, withRequestIdentity } from './db/index.js';
 import { storefrontRouter } from './routes/storefront.js';
 import { checkoutRouter } from './routes/checkout.js';
 import { accountRouter } from './routes/account.js';
@@ -27,6 +27,28 @@ export function createApp() {
   }));
   app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser());
+
+  // Optional CORS for a split deployment (frontend on another origin).
+  // Default: CORS_ORIGINS unset → no CORS headers → same-origin only, which is
+  // the recommended single-service architecture (SPA served by this server).
+  if (config.corsOrigins.length) {
+    const allowed = new Set(config.corsOrigins);
+    app.use((req, res, next) => {
+      const origin = req.headers.origin;
+      if (origin && allowed.has(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+        res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,PUT,DELETE,OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        res.setHeader('Vary', 'Origin');
+      }
+      if (req.method === 'OPTIONS') {
+        res.sendStatus(204);
+        return;
+      }
+      next();
+    });
+  }
 
   // security headers
   app.use((req, res, next) => {
@@ -50,8 +72,30 @@ export function createApp() {
       .catch(next);
   });
 
-  app.get('/api/health', (_req, res) => {
-    res.json({ ok: true, version: config.version, env: config.env, time: new Date().toISOString() });
+  // Readiness probe: verifies the database is reachable without exposing internals.
+  // Used as the hosting health-check path (/api/health). Returns 503 when the DB is down.
+  app.get('/api/health', async (_req, res) => {
+    let dbOk = true;
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        db().query('SELECT 1 AS ok'),
+        new Promise<never>((_, rej) => {
+          timer = setTimeout(() => rej(new Error('db health timeout')), 3000);
+        }),
+      ]);
+    } catch {
+      dbOk = false;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+    res.status(dbOk ? 200 : 503).json({
+      ok: dbOk,
+      db: dbOk ? 'ok' : 'unavailable',
+      version: config.version,
+      env: config.env,
+      time: new Date().toISOString(),
+    });
   });
 
   app.use('/api', storefrontRouter);

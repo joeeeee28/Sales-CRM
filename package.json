@@ -20,7 +20,9 @@
     "db:migrate": "tsx --disable-warning=ExperimentalWarning scripts/migrate.ts",
     "db:seed": "tsx --disable-warning=ExperimentalWarning scripts/seed.ts",
     "db:reset": "tsx --disable-warning=ExperimentalWarning scripts/reset.ts",
-    "jobs:run": "tsx --disable-warning=ExperimentalWarning scripts/run-jobs.ts"
+    "jobs:run": "tsx --disable-warning=ExperimentalWarning scripts/run-jobs.ts",
+    "db:copy-to-pg": "tsx --disable-warning=ExperimentalWarning scripts/migrate-to-postgres.ts",
+    "verify:deploy": "tsx --disable-warning=ExperimentalWarning scripts/verify-deploy.ts"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.1.0",
