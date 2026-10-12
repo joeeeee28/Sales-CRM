@@ -1,0 +1,127 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/inter';
+@import '@fontsource/instrument-serif';
+@import '@fontsource/instrument-serif/400-italic.css';
+
+/* ---------------------------------------------------------------------------
+   Brand tokens — edit these (and shared/brand.ts) to re-skin the whole store.
+--------------------------------------------------------------------------- */
+@theme {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Instrument Serif', Georgia, 'Times New Roman', serif;
+
+  --color-paper: #faf9f6;
+  --color-card: #ffffff;
+  --color-ink: #17171a;
+  --color-ink-soft: #3d3c41;
+  --color-muted: #6e6b66;
+  --color-line: #e7e4de;
+  --color-line-soft: #f0eee9;
+
+  --color-accent: #c8552b;
+  --color-accent-dark: #a9431f;
+  --color-accent-soft: #f7e9e2;
+  --color-success: #1f7a4d;
+  --color-success-soft: #e6f3ec;
+  --color-warning: #9a6b15;
+  --color-warning-soft: #faf1de;
+  --color-danger: #b3261e;
+  --color-danger-soft: #fbeae9;
+
+  --shadow-card: 0 1px 2px rgb(23 23 26 / 0.04), 0 8px 24px -12px rgb(23 23 26 / 0.12);
+  --shadow-pop: 0 12px 40px -12px rgb(23 23 26 / 0.24);
+
+  --radius-card: 1rem;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-paper text-ink font-sans antialiased;
+  font-feature-settings: 'cv11', 'ss01';
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--color-accent);
+  color: #fff;
+}
+
+/* focus visibility for keyboard users only */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@utility container-page {
+  @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+}
+
+@utility prose-store {
+  & h2 {
+    @apply font-display text-2xl mt-8 mb-3;
+  }
+  & h3 {
+    @apply font-semibold text-base mt-6 mb-2;
+  }
+  & p {
+    @apply my-3 leading-relaxed text-ink-soft;
+  }
+  & ul {
+    @apply my-3 list-disc pl-5 space-y-1 text-ink-soft;
+  }
+  & ol {
+    @apply my-3 list-decimal pl-5 space-y-1 text-ink-soft;
+  }
+  & a {
+    @apply text-accent-dark underline underline-offset-2;
+  }
+  & code {
+    @apply bg-line-soft px-1 py-0.5 rounded text-sm;
+  }
+}
+
+/* subtle, honest motion: respect reduced-motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.skeleton {
+  @apply relative overflow-hidden bg-line-soft rounded-md;
+}
+.skeleton::after {
+  content: '';
+  @apply absolute inset-0;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.7), transparent);
+  transform: translateX(-100%);
+  animation: shimmer 1.4s infinite;
+}

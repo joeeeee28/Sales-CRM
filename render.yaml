@@ -1,0 +1,56 @@
+# Render Blueprint — one free web service serves BOTH the API and the built SPA.
+# The frontend calls same-origin /api routes, so a single service needs no CORS
+# configuration and has one cold start instead of two.
+#
+# Use: Render dashboard → New + → Blueprint → pick this repository → apply.
+# Every `sync: false` variable must be entered in the dashboard (secrets stay
+# with you — nothing sensitive is committed here).
+services:
+  - type: web
+    name: ojas-store
+    runtime: node
+    plan: free
+    region: singapore # closest Render region to India; change to taste
+    branch: main # production branch — auto-deploys on every push
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22" # node:sqlite requires Node >= 22.5 (imported at module load)
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false # Supabase → Settings → Database → Connection string (URI)
+      - key: SESSION_SECRET
+        sync: false # openssl rand -hex 32
+      - key: PUBLIC_URL
+        sync: false # https://<your-service>.onrender.com (or custom domain)
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: SEED_SAMPLE_DATA
+        value: "1" # set to 0 to launch with an empty catalogue
+      - key: SUPPLIER_SCHEDULER_ENABLED
+        value: "true" # defaults OFF in production; needed for stock/fulfillment/tracking jobs
+      - key: DB_MIGRATE_ON_BOOT
+        value: "true" # set false only when using a non-DDL database role
+      - key: PG_POOL_MAX
+        value: "5" # single free instance; keep small against Supabase limits
+      - key: EMAIL_PROVIDER
+        sync: false # console | resend
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RAZORPAY_KEY_ID
+        sync: false # leave unset → checkout stays in clearly-labelled simulated mode
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
+      # Optional:
+      # - key: CORS_ORIGINS        # only if you later split frontend to another origin
+      #   sync: false
+      # - key: DATABASE_SSL_MODE   # auto | require | disable (auto = SSL unless localhost)
+      # - key: SUPPLIER_HTTP_BEARER_TOKEN  # real supplier adapter credentials
