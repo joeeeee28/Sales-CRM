@@ -9,7 +9,7 @@ import { formatMoney, usePageViewTracking } from '@/lib/format';
 import { Button, Input, QtyStepper } from './ui';
 import { api, ApiError } from '@/lib/api';
 import type { ProductListItem } from '@shared/types';
-import { PAYMENT_BADGES } from '@shared/brand';
+import { PAYMENT_BADGES, BRAND } from '@shared/brand';
 
 function Logo() {
   const store = useBootstrap((s) => s.store);
@@ -36,6 +36,13 @@ function SearchOverlay({ open, onClose }: { open: boolean; onClose: () => void }
     if (open) setTimeout(() => inputRef.current?.focus(), 50);
     else setResults([]);
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
 
   useEffect(() => {
     const t = setTimeout(async () => {
@@ -109,6 +116,14 @@ function CartDrawer() {
   const { cart, drawerOpen, setDrawer, setQty, remove } = useCart();
   const navigate = useNavigate();
   const store = useBootstrap((s) => s.store);
+
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setDrawer(false);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [drawerOpen, setDrawer]);
+
   if (!drawerOpen) return null;
   const subtotal = cart?.subtotal_paise ?? 0;
   const freeOver = store?.free_shipping_over_paise ?? null;
@@ -288,6 +303,7 @@ export function Footer() {
   const [email, setEmail] = useState('');
   const [state, setState] = useState<'idle' | 'loading' | 'done'>('idle');
   const [message, setMessage] = useState('');
+  const [messageOk, setMessageOk] = useState(true);
 
   const subscribe = async (e: FormEvent) => {
     e.preventDefault();
@@ -295,10 +311,12 @@ export function Footer() {
     try {
       const res = await api.post<{ message: string }>('/newsletter', { email, source: 'footer' });
       setMessage(res.message);
+      setMessageOk(true);
       setState('done');
       setEmail('');
     } catch (err) {
       setMessage(err instanceof ApiError ? err.message : 'Could not subscribe');
+      setMessageOk(false);
       setState('done');
     }
   };
@@ -317,11 +335,13 @@ export function Footer() {
         <div>
           <Logo />
           <p className="mt-3 max-w-xs text-sm text-muted">{store?.tagline}</p>
-          <div className="mt-5 flex gap-3" aria-label="Social links">
-            {['Instagram', 'X', 'LinkedIn'].map((s) => (
-              <a key={s} href="https://example.com" rel="noopener noreferrer" className="text-xs font-medium text-muted hover:text-ink underline underline-offset-4">{s}</a>
-            ))}
-          </div>
+          {BRAND.social.length > 0 && (
+            <div className="mt-5 flex gap-3" aria-label="Social links">
+              {BRAND.social.map((s) => (
+                <a key={s.label} href={s.href} target="_blank" rel="noopener noreferrer" className="text-xs font-medium text-muted hover:text-ink underline underline-offset-4">{s.label}</a>
+              ))}
+            </div>
+          )}
         </div>
         <div>
           <h3 className="text-sm font-semibold">Help</h3>
@@ -347,7 +367,9 @@ export function Footer() {
             <Input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" aria-label="Email address" className="h-10" />
             <Button type="submit" size="sm" loading={state === 'loading'}>Join</Button>
           </form>
-          {message && <p className="mt-2 text-xs text-success">{message}</p>}
+          {message && (
+            <p role="status" className={clsx('mt-2 text-xs', messageOk ? 'text-success' : 'text-danger')}>{message}</p>
+          )}
           <div className="mt-6">
             <h4 className="text-xs font-semibold text-muted uppercase tracking-wide">We accept</h4>
             <div className="mt-2 flex flex-wrap gap-1.5">

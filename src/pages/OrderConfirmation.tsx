@@ -99,7 +99,7 @@ export default function OrderConfirmation() {
       <div className="mt-8 flex flex-wrap justify-center gap-3">
         <LinkButton to="/track" variant="accent">Track order</LinkButton>
         <LinkButton to="/shop" variant="secondary">Continue shopping</LinkButton>
-        <Link to="/account/orders" className="self-center text-sm text-accent underline underline-offset-4">View in your account</Link>
+        <Link to="/account/orders" className="self-center text-sm text-accent-dark underline underline-offset-4">View in your account</Link>
       </div>
     </div>
   );

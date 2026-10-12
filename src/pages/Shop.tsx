@@ -127,7 +127,7 @@ export default function Shop() {
         <aside className={clsx('lg:block', filtersOpen ? 'block' : 'hidden')} aria-label="Filters">{filters}</aside>
         <div>
           {loading ? (
-            <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="grid grid-cols-2 gap-3 sm:gap-5 xl:grid-cols-3 2xl:grid-cols-4">
               {[1, 2, 3, 4, 5, 6].map((i) => <Skeleton key={i} className="aspect-[4/3] rounded-2xl" />)}
             </div>
           ) : data && data.items.length === 0 ? (
@@ -138,7 +138,7 @@ export default function Shop() {
             />
           ) : (
             <>
-              <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="grid grid-cols-2 gap-3 sm:gap-5 xl:grid-cols-3 2xl:grid-cols-4">
                 {data?.items.map((p) => <ProductCard key={p.id} product={p} />)}
               </div>
               {pages > 1 && (

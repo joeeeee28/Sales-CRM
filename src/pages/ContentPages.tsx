@@ -24,7 +24,7 @@ export function ContentPage() {
     return (
       <div className="container-page max-w-3xl py-24 text-center">
         <h1 className="font-display text-4xl">Page not found</h1>
-        <Link to="/" className="mt-4 inline-block text-accent underline underline-offset-4">Back home</Link>
+        <Link to="/" className="mt-4 inline-block text-accent-dark underline underline-offset-4">Back home</Link>
       </div>
     );
   }
@@ -34,7 +34,7 @@ export function ContentPage() {
     <article className="container-page max-w-3xl py-12">
       <h1 className="font-display text-4xl sm:text-5xl">{page.title}</h1>
       <div className="prose-store mt-6" dangerouslySetInnerHTML={{ __html: page.html }} />
-      <p className="mt-10 border-t border-line pt-4 text-xs text-muted">Last updated {new Date(page.updated_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}. Questions? <Link className="text-accent underline underline-offset-4" to="/contact">Contact us</Link>.</p>
+      <p className="mt-10 border-t border-line pt-4 text-xs text-muted">Last updated {new Date(page.updated_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}. Questions? <Link className="text-accent-dark underline underline-offset-4" to="/contact">Contact us</Link>.</p>
     </article>
   );
 }

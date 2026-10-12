@@ -442,7 +442,7 @@ function ProductsPage() {
                   <td className="px-4 py-3 tabular-nums">{formatMoney(p.base_price_paise)}</td>
                   <td className="px-4 py-3 tabular-nums">{p.total_stock}</td>
                   <td className="px-4 py-3">{p.is_sample ? <Badge tone="warning">sample</Badge> : '—'}</td>
-                  <td className="px-4 py-3"><Link className="text-accent underline underline-offset-2" to={`/admin/products/${p.id}`}>Edit</Link></td>
+                  <td className="px-4 py-3"><Link className="text-accent-dark underline underline-offset-2" to={`/admin/products/${p.id}`}>Edit</Link></td>
                 </tr>
               ))}
             </tbody>
@@ -741,7 +741,7 @@ function SuppliersPage() {
                 <div><dt className="text-muted">Fulfilment</dt><dd>{s.supports_fulfillment ? 'supported' : '—'}</dd></div>
                 <div><dt className="text-muted">Last sync</dt><dd className="text-xs">{s.last_sync ? `${s.last_sync.job} · ${s.last_sync.status}` : 'never'}</dd></div>
               </dl>
-              <button className="mt-3 text-xs text-accent underline underline-offset-2" onClick={() => api.get<{ items: any[] }>(`/admin/supplier-products?supplierId=${s.id}`).then((d) => setCatalogue(d.items))}>View imported catalogue & mappings</button>
+              <button className="mt-3 text-xs text-accent-dark underline underline-offset-2" onClick={() => api.get<{ items: any[] }>(`/admin/supplier-products?supplierId=${s.id}`).then((d) => setCatalogue(d.items))}>View imported catalogue & mappings</button>
             </Card>
           ))}
         </div>

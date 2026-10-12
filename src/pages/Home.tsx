@@ -4,8 +4,9 @@ import { api } from '@/lib/api';
 import { useBootstrap } from '@/store/bootstrap';
 import { usePageMeta, formatMoney, formatDate } from '@/lib/format';
 import { ProductCard } from '@/components/product';
-import { Accordion, Badge, Button, LinkButton, Skeleton, Stars } from '@/components/ui';
+import { Accordion, Badge, LinkButton, Skeleton, Stars } from '@/components/ui';
 import type { Category, ProductListItem } from '@shared/types';
+import { BRAND } from '@shared/brand';
 import { mdToHtmlClient } from '@/lib/md';
 
 interface HomeData {
@@ -13,6 +14,7 @@ interface HomeData {
   featured: ProductListItem[];
   newArrivals: ProductListItem[];
   offers: ProductListItem[];
+  popular: ProductListItem[];
   faqs: { id: string; question: string; answer_md: string }[];
   reviews: { id: string; rating: number; title: string | null; body: string; author_name: string; product_title: string; product_slug: string; created_at: string }[];
   reviewPolicy: string;
@@ -27,14 +29,21 @@ export default function Home() {
     api.get<HomeData>('/home').then(setData).catch(() => setData(null));
   }, []);
 
+  const offers = data?.offers ?? [];
+  const freeOver = store?.free_shipping_over_paise ?? null;
+
   return (
     <>
       {/* Hero */}
       <section className="container-page pt-8 pb-4 sm:pt-12">
         <div className="grid items-center gap-10 lg:grid-cols-2">
           <div className="animate-fade-up">
-            <Badge tone="accent">New season, same standards</Badge>
-            <h1 className="mt-4 font-display text-5xl sm:text-6xl lg:text-7xl leading-[1.02] tracking-tight">
+            {offers.length > 0 ? (
+              <Badge tone="accent">Real price cuts on {offers.length} product{offers.length === 1 ? '' : 's'} — no countdowns</Badge>
+            ) : (
+              <Badge tone="neutral">{store?.tagline ?? 'Considered goods for everyday life'}</Badge>
+            )}
+            <h1 className="mt-4 font-display text-[2.7rem] sm:text-6xl lg:text-7xl leading-[1.02] tracking-tight">
               Everyday objects,<br />chosen carefully.
             </h1>
             <p className="mt-5 max-w-md text-lg text-muted leading-relaxed">
@@ -45,9 +54,18 @@ export default function Home() {
               <LinkButton to="/pages/about" variant="secondary" size="lg">How we work</LinkButton>
             </div>
             <dl className="mt-10 grid max-w-md grid-cols-3 gap-4 border-t border-line pt-6 text-sm">
-              <div><dt className="text-muted">Returns</dt><dd className="font-semibold mt-0.5">30 days</dd></div>
-              <div><dt className="text-muted">Delivery</dt><dd className="font-semibold mt-0.5">3–6 days</dd></div>
-              <div><dt className="text-muted">Reviews</dt><dd className="font-semibold mt-0.5">Verified only</dd></div>
+              <div>
+                <dt className="text-muted">Shipping</dt>
+                <dd className="font-semibold mt-0.5">{freeOver != null ? <>Free over {formatMoney(freeOver)}</> : 'Calculated at checkout'}</dd>
+              </div>
+              <div>
+                <dt className="text-muted">Returns</dt>
+                <dd className="font-semibold mt-0.5">{BRAND.returnsWindowDays} days</dd>
+              </div>
+              <div>
+                <dt className="text-muted">Reviews</dt>
+                <dd className="font-semibold mt-0.5">Verified only</dd>
+              </div>
             </dl>
           </div>
           <div className="relative">
@@ -65,57 +83,64 @@ export default function Home() {
       <section className="container-page mt-16" aria-labelledby="cat-heading">
         <div className="flex items-end justify-between">
           <h2 id="cat-heading" className="font-display text-3xl sm:text-4xl">Shop by category</h2>
-          <Link to="/shop" className="text-sm font-medium text-accent hover:underline underline-offset-4">View all</Link>
+          <Link to="/shop" className="text-sm font-medium text-accent-dark hover:underline underline-offset-4">View all</Link>
         </div>
-        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           {(data?.categories ?? []).map((c) => (
-            <Link key={c.id} to={`/shop/${c.slug}`} className="group relative overflow-hidden rounded-2xl border border-line-soft bg-card shadow-card">
+            <Link key={c.id} to={`/shop/${c.slug}`} className="group relative overflow-hidden rounded-2xl border border-line-soft bg-card shadow-card focus-within:ring-2 focus-within:ring-ink/50">
               {c.image_url ? (
                 <img src={c.image_url} alt="" className="aspect-[4/3] w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]" loading="lazy" />
               ) : (
                 <div className="aspect-[4/3] bg-line-soft" />
               )}
-              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-ink/70 to-transparent p-4 pt-10">
-                <h3 className="font-display text-xl text-paper">{c.name}</h3>
+              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-ink/70 to-transparent p-3 sm:p-4 pt-8 sm:pt-10">
+                <h3 className="font-display text-lg sm:text-xl text-paper">{c.name}</h3>
               </div>
             </Link>
           ))}
-          {!data && [1, 2, 3, 4].map((i) => <Skeleton key={i} className="aspect-[4/3]" />)}
+          {!data && [1, 2, 3, 4].map((i) => <Skeleton key={i} className="aspect-[4/3] rounded-2xl" />)}
         </div>
       </section>
+
+      {/* Best sellers — rendered only when real orders exist (units sold > 0) */}
+      {data && data.popular.length > 0 && (
+        <section className="container-page mt-20" aria-labelledby="popular-heading">
+          <div className="flex items-end justify-between">
+            <div>
+              <h2 id="popular-heading" className="font-display text-3xl sm:text-4xl">Best sellers</h2>
+              <p className="mt-1 text-sm text-muted">Ranked by units sold from real, non-cancelled orders.</p>
+            </div>
+            <Link to="/shop?sort=popular" className="text-sm font-medium text-accent-dark hover:underline underline-offset-4">See ranking</Link>
+          </div>
+          <div className="mt-6 grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-4">
+            {data.popular.slice(0, 4).map((p, i) => <ProductCard key={p.id} product={p} eager={i < 2} />)}
+          </div>
+        </section>
+      )}
 
       {/* Featured */}
       <section className="container-page mt-20" aria-labelledby="featured-heading">
         <h2 id="featured-heading" className="font-display text-3xl sm:text-4xl">Editor's picks</h2>
         <p className="mt-1 text-sm text-muted">A short list we stand behind — curated by our team, not by an algorithm.</p>
-        <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-6 grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-4">
           {(data?.featured ?? []).map((p, i) => <ProductCard key={p.id} product={p} eager={i < 2} />)}
           {!data && [1, 2, 3, 4].map((i) => <Skeleton key={i} className="aspect-[4/3] rounded-2xl" />)}
         </div>
       </section>
 
       {/* Genuine offers — rendered only when real compare-at prices exist */}
-      {data && data.offers.length > 0 && (
+      {data && offers.length > 0 && (
         <section className="container-page mt-20" aria-labelledby="offers-heading">
-          <div className="rounded-3xl bg-ink text-paper p-8 sm:p-12">
+          <div className="rounded-3xl bg-ink text-paper p-6 sm:p-12">
             <div className="flex flex-wrap items-end justify-between gap-4">
               <div>
                 <h2 id="offers-heading" className="font-display text-3xl sm:text-4xl">Current offers</h2>
                 <p className="mt-1 text-sm text-paper/70">Real price reductions on selected products — no invented countdowns.</p>
               </div>
-              <LinkButton to="/shop" variant="secondary" size="sm">Shop all offers</LinkButton>
+              <LinkButton to="/shop" variant="secondary" size="sm">Shop all products</LinkButton>
             </div>
-            <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-              {data.offers.map((p) => (
-                <Link key={p.id} to={`/product/${p.slug}`} className="group rounded-2xl bg-paper text-ink overflow-hidden shadow-card">
-                  {p.images?.[0] && <img src={p.images[0].url} alt="" className="aspect-[4/3] w-full object-cover group-hover:scale-[1.03] transition-transform duration-500" loading="lazy" />}
-                  <div className="p-4">
-                    <p className="font-medium">{p.title}</p>
-                    <p className="mt-1 text-sm"><span className="font-semibold text-accent-dark">{formatMoney(p.min_price_paise)}</span>{' '}
-                      <span className="text-muted line-through">{formatMoney(p.compare_at_price_paise ?? 0)}</span></p>
-                  </div>
-                </Link>
-              ))}
+            <div className="mt-8 grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-4">
+              {offers.map((p) => <ProductCard key={p.id} product={p} />)}
             </div>
           </div>
         </section>
@@ -125,9 +150,9 @@ export default function Home() {
       <section className="container-page mt-20" aria-labelledby="new-heading">
         <div className="flex items-end justify-between">
           <h2 id="new-heading" className="font-display text-3xl sm:text-4xl">New arrivals</h2>
-          <Link to="/shop?sort=newest" className="text-sm font-medium text-accent hover:underline underline-offset-4">See what's new</Link>
+          <Link to="/shop?sort=newest" className="text-sm font-medium text-accent-dark hover:underline underline-offset-4">See what's new</Link>
         </div>
-        <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-6 grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-4">
           {(data?.newArrivals ?? []).slice(0, 4).map((p) => <ProductCard key={p.id} product={p} />)}
           {!data && [1, 2, 3, 4].map((i) => <Skeleton key={i} className="aspect-[4/3] rounded-2xl" />)}
         </div>
@@ -179,8 +204,8 @@ export default function Home() {
       <section className="container-page mt-24 grid gap-10 lg:grid-cols-[1fr_1.4fr]" aria-labelledby="faq-heading">
         <div>
           <h2 id="faq-heading" className="font-display text-3xl sm:text-4xl">Questions, answered</h2>
-          <p className="mt-2 text-sm text-muted">Everything else lives on the <Link className="text-accent underline underline-offset-4" to="/faq">FAQ page</Link>.</p>
-          <Button variant="secondary" className="mt-5" onClick={() => (window.location.href = '/contact')}>Contact support</Button>
+          <p className="mt-2 text-sm text-muted">Everything else lives on the <Link className="text-accent-dark underline underline-offset-4" to="/faq">FAQ page</Link>.</p>
+          <LinkButton to="/contact" variant="secondary" className="mt-5">Contact support</LinkButton>
         </div>
         <Accordion items={(data?.faqs ?? []).slice(0, 5).map((f) => ({ id: f.id, q: f.question, a: <div dangerouslySetInnerHTML={{ __html: mdToHtmlClient(f.answer_md) }} /> }))} />
       </section>

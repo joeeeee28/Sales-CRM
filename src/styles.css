@@ -77,7 +77,7 @@ body {
     @apply my-3 list-decimal pl-5 space-y-1 text-ink-soft;
   }
   & a {
-    @apply text-accent underline underline-offset-2;
+    @apply text-accent-dark underline underline-offset-2;
   }
   & code {
     @apply bg-line-soft px-1 py-0.5 rounded text-sm;

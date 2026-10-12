@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router';
 import { api, ApiError } from '@/lib/api';
 import { useCart } from '@/store/cart';
 import { useBootstrap } from '@/store/bootstrap';
@@ -9,6 +9,7 @@ import { Gallery, ProductCard, ReviewSection } from '@/components/product';
 import { Badge, Button, Price, QtyStepper, Skeleton, StatusPill } from '@/components/ui';
 import type { Product, ProductListItem, Review, ShippingMethod } from '@shared/types';
 import { mdToHtmlClient } from '@/lib/md';
+import { BRAND } from '@shared/brand';
 import clsx from 'clsx';
 
 interface ProductResponse {
@@ -26,6 +27,7 @@ export default function ProductPage() {
   const [qty, setQty] = useState(1);
   const [method, setMethod] = useState<ShippingMethod | null>(null);
   const addToCart = useCart((s) => s.add);
+  const navigate = useNavigate();
   const store = useBootstrap((s) => s.store);
 
   useEffect(() => {
@@ -58,12 +60,30 @@ export default function ProductPage() {
     return [...names];
   }, [product]);
 
+  // Mobile sticky buy bar: appears once the inline CTA scrolls out of view (above the viewport).
+  const ctaRef = useRef<HTMLDivElement>(null);
+  const [showBuyBar, setShowBuyBar] = useState(false);
+  useEffect(() => {
+    const el = ctaRef.current;
+    if (!el) {
+      setShowBuyBar(false);
+      return;
+    }
+    const io = new IntersectionObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      setShowBuyBar(!entry.isIntersecting && entry.boundingClientRect.top < 0);
+    }, { threshold: 0 });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [product?.id]);
+
   if (error) {
     return (
       <div className="container-page py-24 text-center">
         <h1 className="font-display text-4xl">Product not found</h1>
         <p className="mt-2 text-muted">{error}</p>
-        <Link to="/shop" className="mt-6 inline-block text-accent underline underline-offset-4">Back to shop</Link>
+        <Link to="/shop" className="mt-6 inline-block text-accent-dark underline underline-offset-4">Back to shop</Link>
       </div>
     );
   }
@@ -89,7 +109,7 @@ export default function ProductPage() {
       await addToCart(variantId, qty);
       if (buyNow) {
         useCart.getState().setDrawer(false);
-        window.location.href = '/checkout';
+        navigate('/checkout');
       }
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Could not add to bag');
@@ -97,7 +117,7 @@ export default function ProductPage() {
   };
 
   return (
-    <div className="container-page py-10">
+    <div className="container-page py-10 pb-24 lg:pb-10">
       <nav className="text-xs text-muted" aria-label="Breadcrumb">
         <Link to="/" className="hover:underline">Home</Link> <span aria-hidden="true">/</span>{' '}
         {product.category && <><Link to={`/shop/${product.category.slug}`} className="hover:underline">{product.category.name}</Link> <span aria-hidden="true">/</span> </>}
@@ -166,7 +186,7 @@ export default function ProductPage() {
           </div>
 
           {/* Qty + CTAs */}
-          <div className="mt-6 flex flex-wrap items-center gap-3">
+          <div ref={ctaRef} className="mt-6 flex flex-wrap items-center gap-3">
             <QtyStepper value={qty} onChange={setQty} max={Math.max(1, variant?.stock_qty ?? 99)} />
             <Button variant="primary" size="lg" className="flex-1 min-w-40" disabled={!inStock} onClick={() => buy(false)}>Add to bag</Button>
             <Button variant="accent" size="lg" disabled={!inStock} onClick={() => buy(true)}>Buy now</Button>
@@ -185,7 +205,7 @@ export default function ProductPage() {
               </div>
               <div className="flex justify-between gap-4">
                 <span className="text-muted">Returns</span>
-                <Link to="/pages/returns-refund-policy" className="font-medium underline underline-offset-4">30-day easy returns</Link>
+                <Link to="/pages/returns-refund-policy" className="font-medium underline underline-offset-4">{BRAND.returnsWindowDays}-day easy returns</Link>
               </div>
             </div>
           )}
@@ -236,11 +256,33 @@ export default function ProductPage() {
       {data?.related.length ? (
         <section className="mt-20" aria-labelledby="related-heading">
           <h2 id="related-heading" className="font-display text-3xl">You may also like</h2>
-          <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-6 grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-4">
             {data.related.map((p) => <ProductCard key={p.id} product={p} />)}
           </div>
         </section>
       ) : null}
+
+      {/* Sticky purchase bar (mobile only) — keeps the primary action in reach without covering content */}
+      {product && (
+        <div
+          className={clsx(
+            'fixed inset-x-0 bottom-0 z-40 border-t border-line bg-card/95 px-4 py-3 backdrop-blur transition-transform duration-200 lg:hidden',
+            showBuyBar ? 'translate-y-0' : 'pointer-events-none translate-y-full'
+          )}
+          style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
+          aria-hidden={!showBuyBar}
+        >
+          <div className="flex items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs text-muted">{product.title}{variant ? ` · ${Object.values(variant.options).join(' / ') || variant.title}` : ''}</p>
+              <Price paise={price} compareAt={compareAt} size="sm" />
+            </div>
+            <Button variant="accent" disabled={!inStock || !variantId} tabIndex={showBuyBar ? 0 : -1} onClick={() => buy(false)}>
+              {inStock ? 'Add to bag' : 'Out of stock'}
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

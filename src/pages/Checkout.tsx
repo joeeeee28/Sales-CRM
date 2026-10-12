@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { api, ApiError } from '@/lib/api';
 import { useCart } from '@/store/cart';
 import { useAuth } from '@/store/auth';
 import { useBootstrap } from '@/store/bootstrap';
 import { toast } from '@/store/toast';
 import { formatMoney, usePageMeta, deliveryWindow, track } from '@/lib/format';
-import { Button, Checkbox, Field, Input, Select, Skeleton, Textarea } from '@/components/ui';
+import { Button, Field, Input, Select, Skeleton, Textarea } from '@/components/ui';
 import type { Order, Quote, ShippingMethod } from '@shared/types';
 
 declare global {
@@ -154,7 +154,7 @@ export default function Checkout() {
   return (
     <div className="container-page py-10">
       <h1 className="font-display text-4xl sm:text-5xl">Checkout</h1>
-      <p className="mt-1 text-sm text-muted">{!user && <>Checking out as guest — <a className="text-accent underline underline-offset-4" href="/account/login">sign in</a> to save this order to your account.</>}</p>
+      <p className="mt-1 text-sm text-muted">{!user && <>Checking out as guest — <Link className="text-accent-dark underline underline-offset-4" to="/account/login">sign in</Link> to save this order to your account.</>}</p>
 
       <div className="mt-8 grid gap-10 lg:grid-cols-[1.5fr_1fr]">
         <div className="space-y-8">
@@ -274,7 +274,6 @@ export default function Checkout() {
             )}
             <p className="mt-3 text-center text-[11px] leading-relaxed text-muted">By placing this order you agree to our terms, returns and privacy policies. Payments are verified server-side; we never store card data.</p>
           </div>
-          <Checkbox label="Email me offers and restock notes (optional, unsubscribe anytime)." checked={false} onChange={() => toast.info('Marketing consent is managed from your account profile after checkout.')} />
         </aside>
       </div>
     </div>

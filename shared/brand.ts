@@ -12,11 +12,15 @@ export const BRAND = {
   supportEmail: 'care@ojas.example',
   supportPhone: '+91 80 4719 0000',
   addressLine: 'WeWork Galaxy, 43 Residency Rd, Bengaluru 560025, India',
-  social: [
-    { label: 'Instagram', href: 'https://instagram.com' },
-    { label: 'X', href: 'https://x.com' },
-    { label: 'LinkedIn', href: 'https://linkedin.com' },
-  ],
+  /**
+   * Social profiles — rendered in the footer ONLY when configured here.
+   * Empty by default: we never render placeholder links to example.com or
+   * generic platform homepages. Add your real profile URLs, e.g.
+   * { label: 'Instagram', href: 'https://instagram.com/yourstore' }
+   */
+  social: [] as readonly { label: string; href: string }[],
+  /** Returns window promised in the (legally-flagged) returns policy template. */
+  returnsWindowDays: 30,
   /** Accent colour mirrored in styles.css (`--color-accent-*`). */
   accent: '#C8552B',
 } as const;

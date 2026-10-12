@@ -14,9 +14,10 @@ export function ProductCard({ product, eager }: { product: ProductListItem; eage
   const user = useAuth((s) => s.user);
   const inList = wishlist.ids.has(product.id);
   const out = product.total_stock <= 0;
+  const hasRange = (product.max_price_paise ?? 0) > product.min_price_paise;
 
   return (
-    <div className="group relative flex flex-col overflow-hidden rounded-2xl border border-line-soft bg-card shadow-card transition-shadow hover:shadow-pop">
+    <div className="group relative flex flex-col overflow-hidden rounded-2xl border border-line-soft bg-card shadow-card transition-shadow hover:shadow-pop focus-within:ring-2 focus-within:ring-ink/50">
       <Link to={`/product/${product.slug}`} className="relative block aspect-[4/3] overflow-hidden bg-line-soft" tabIndex={-1} aria-hidden="true">
         {product.images?.[0] ? (
           <img
@@ -30,6 +31,10 @@ export function ProductCard({ product, eager }: { product: ProductListItem; eage
         )}
         {out && <span className="absolute left-3 top-3"><Badge tone="neutral">Out of stock</Badge></span>}
         {!out && product.total_stock <= 5 && <span className="absolute left-3 top-3"><Badge tone="warning">Low stock</Badge></span>}
+        {/* Explicit view action: always visible on touch/small screens, revealed on hover/focus for desktop */}
+        <span className="pointer-events-none absolute inset-x-3 bottom-3 flex justify-center md:opacity-0 md:transition-opacity md:duration-200 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
+          <span className="rounded-full bg-card/95 px-4 py-1.5 text-xs font-semibold text-ink shadow-card">View product</span>
+        </span>
       </Link>
       <button
         type="button"
@@ -47,11 +52,14 @@ export function ProductCard({ product, eager }: { product: ProductListItem; eage
       >
         <svg className="size-4" viewBox="0 0 24 24" fill={inList ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.8"><path d="M12 20s-7-4.6-9.2-8.6C1.2 8.5 3 5 6.5 5c2 0 3.6 1.1 4.5 2.7h2C13.9 6.1 15.5 5 17.5 5 21 5 22.8 8.5 21.2 11.4 19 15.4 12 20 12 20z" strokeLinejoin="round" /></svg>
       </button>
-      <div className="flex flex-1 flex-col p-4">
-        <Link to={`/product/${product.slug}`} className="font-medium leading-snug hover:underline">{product.title}</Link>
-        {product.tagline && <p className="mt-0.5 line-clamp-1 text-sm text-muted">{product.tagline}</p>}
-        <div className="mt-2 flex items-center justify-between gap-2">
-          <Price paise={product.min_price_paise} compareAt={product.compare_at_price_paise} size="sm" />
+      <div className="flex flex-1 flex-col p-3 sm:p-4">
+        <Link to={`/product/${product.slug}`} className="text-sm sm:text-base font-medium leading-snug hover:underline">{product.title}</Link>
+        {product.tagline && <p className="mt-0.5 line-clamp-1 text-xs sm:text-sm text-muted">{product.tagline}</p>}
+        <div className="mt-auto pt-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+          <span className="min-w-0">
+            {hasRange && <span className="mr-1 text-xs text-muted">From</span>}
+            <Price paise={product.min_price_paise} compareAt={product.compare_at_price_paise} size="sm" />
+          </span>
           {product.rating && product.rating.count > 0 && <Stars rating={product.rating.average} count={product.rating.count} />}
         </div>
       </div>

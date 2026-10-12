@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { db } from '../db/index.js';
 import { asyncHandler, badRequest, notFound } from '../lib/errors.js';
-import { listProducts, getProductBySlug, listCategories, publishedReviews, relatedProducts } from '../lib/catalog.js';
+import { listProducts, getProductBySlug, listCategories, publishedReviews, relatedProducts, attachPrimaryImages } from '../lib/catalog.js';
 import { getSettings } from '../lib/settings.js';
 import { validate } from '../lib/validate.js';
 import { b, json, mdToHtml } from '../lib/util.js';
@@ -52,23 +52,15 @@ storefrontRouter.get(
   asyncHandler(async (_req, res) => {
     const settings = await getSettings();
     const categories = await listCategories();
-    const featured = await listProducts({ pageSize: 8, sort: 'newest' });
-    // "Featured" is an editorial curation (featured_rank), never fake popularity.
-    const featuredRows = await db().query(
-      `SELECT p.*, COALESCE(stock.total_stock,0) AS total_stock, p.base_price_paise AS min_price_paise, p.base_price_paise AS max_price_paise
-       FROM products p
-       LEFT JOIN (SELECT product_id, SUM(stock_qty) total_stock FROM product_variants WHERE is_active=1 GROUP BY product_id) stock ON stock.product_id = p.id
-       WHERE p.status='active' AND p.featured_rank IS NOT NULL ORDER BY p.featured_rank LIMIT 4`
-    );
-    const newArrivals = await listProducts({ pageSize: 8, sort: 'newest' });
-    // Genuine offers only: a real compare-at price higher than the selling price.
-    const offerRows = await db().query(
-      `SELECT p.*, COALESCE(stock.total_stock,0) AS total_stock, p.base_price_paise AS min_price_paise, p.base_price_paise AS max_price_paise
-       FROM products p
-       LEFT JOIN (SELECT product_id, SUM(stock_qty) total_stock FROM product_variants WHERE is_active=1 GROUP BY product_id) stock ON stock.product_id = p.id
-       WHERE p.status='active' AND p.compare_at_price_paise IS NOT NULL AND p.compare_at_price_paise > p.base_price_paise
-       ORDER BY p.compare_at_price_paise - p.base_price_paise DESC LIMIT 4`
-    );
+    // Every rail is driven by real catalogue queries (editorial featured_rank,
+    // genuine compare-at offers, publish date, real units sold) — never invented
+    // popularity. Primary images are batch-attached so cards never render placeholders.
+    const [featured, offers, newArrivals, popular] = await Promise.all([
+      listProducts({ featuredOnly: true, sort: 'featured', pageSize: 4 }),
+      listProducts({ onOffer: true, sort: 'offer', pageSize: 4 }),
+      listProducts({ sort: 'newest', pageSize: 8 }),
+      listProducts({ hasSales: true, sort: 'popular', pageSize: 8 }),
+    ]);
     const faqs = await db().query(`SELECT * FROM faqs WHERE is_active = 1 ORDER BY sort_order LIMIT 8`);
 
     // Verified reviews across the catalogue (never invented).
@@ -79,34 +71,10 @@ storefrontRouter.get(
        ORDER BY r.created_at DESC LIMIT 6`
     );
 
-    const map = (rows: any[]): ProductListItem[] =>
-      rows.map((row) => ({
-        id: row.id,
-        slug: row.slug,
-        title: row.title,
-        brand: row.brand,
-        tagline: row.tagline,
-        description_md: row.description_md,
-        highlights: json(row.highlights_json, []),
-        category_id: row.category_id,
-        status: row.status,
-        base_price_paise: Number(row.base_price_paise),
-        compare_at_price_paise: row.compare_at_price_paise == null ? null : Number(row.compare_at_price_paise),
-        currency: row.currency,
-        tax_rate_bps: row.tax_rate_bps,
-        meta_title: row.meta_title,
-        meta_description: row.meta_description,
-        is_sample: b(row.is_sample),
-        published_at: row.published_at,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-        rating: null,
-        units_sold: 0,
-        min_price_paise: Number(row.min_price_paise),
-        max_price_paise: Number(row.max_price_paise),
-        total_stock: Number(row.total_stock),
-        images: [],
-      }));
+    const rail = async (items: ProductListItem[]) => (await attachPrimaryImages(items)).map(publicProduct);
+    // If nothing has an editorial featured_rank yet, fall back to the newest products
+    // rather than rendering an empty first-screen rail.
+    const featuredItems = featured.items.length ? featured.items : newArrivals.items.slice(0, 4);
 
     res.json({
       settings: {
@@ -116,9 +84,11 @@ storefrontRouter.get(
         free_shipping_over_paise: settings.free_shipping_over_paise,
       },
       categories,
-      featured: map(featuredRows.length ? featuredRows : featured.items.slice(0, 4)),
-      newArrivals: newArrivals.items.slice(0, 8).map(publicProduct),
-      offers: map(offerRows),
+      featured: await rail(featuredItems),
+      offers: await rail(offers.items),
+      newArrivals: await rail(newArrivals.items),
+      // Honest best-sellers: only products with real (non-cancelled) sales.
+      popular: await rail(popular.items),
       faqs: faqs.map((f) => ({ id: f.id, question: f.question, answer_md: f.answer_md, category: f.category })),
       reviews: reviewRows.map((r) => ({
         id: r.id,
@@ -165,22 +135,9 @@ storefrontRouter.get(
       pageSize: q.pageSize,
     });
     // attach primary image per product (single batched query)
-    const ids = result.items.map((i) => i.id);
-    const images = ids.length
-      ? await db().query(
-          `SELECT id, product_id, url, alt_text FROM product_images WHERE product_id IN (${ids.map(() => '?').join(',')}) ORDER BY sort_order`,
-          ids
-        )
-      : [];
-    const byProduct = new Map<string, { id: string; url: string; alt_text: string }[]>();
-    for (const img of images) {
-      const list = byProduct.get(img.product_id) ?? [];
-      if (list.length < 1) list.push({ id: img.id, url: img.url, alt_text: img.alt_text });
-      byProduct.set(img.product_id, list);
-    }
     res.json({
       ...result,
-      items: result.items.map((i) => ({ ...i, images: byProduct.get(i.id) ?? [] })),
+      items: await attachPrimaryImages(result.items),
     });
   })
 );

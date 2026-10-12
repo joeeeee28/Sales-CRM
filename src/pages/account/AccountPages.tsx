@@ -43,7 +43,7 @@ export function LoginPage() {
         {error && <p className="rounded-lg bg-danger-soft px-3 py-2 text-xs text-danger">{error}</p>}
         <Button type="submit" className="w-full" loading={busy}>Sign in</Button>
         <div className="flex justify-between text-xs">
-          <Link to="/account/register" className="text-accent underline underline-offset-4">Create an account</Link>
+          <Link to="/account/register" className="text-accent-dark underline underline-offset-4">Create an account</Link>
           <Link to="/account/forgot" className="text-muted underline underline-offset-4">Forgot password?</Link>
         </div>
       </form>
